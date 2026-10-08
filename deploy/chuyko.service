@@ -1,0 +1,18 @@
+# systemd user unit. Установка:
+#   sed "s|@DIR@|$PWD|g" deploy/chuyko.service > ~/.config/systemd/user/chuyko.service
+#   systemctl --user daemon-reload && systemctl --user enable --now chuyko
+#   loginctl enable-linger $USER   # чтобы работал без входа в систему
+[Unit]
+Description=Chuyko — voice web interface for an AI agent
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@DIR@
+ExecStart=@DIR@/.venv/bin/python @DIR@/server.py
+Restart=on-failure
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
