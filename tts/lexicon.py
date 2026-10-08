@@ -7,6 +7,8 @@
     lexicon.py test "текст с GitHub"       показать, что реально уйдёт в синтез
     lexicon.py say "текст"                 синтез в файл для прослушивания
 
+Свои слова пишутся в lexicon.local.json (не попадает в git), общий словарь —
+lexicon.json; `--base` заставляет add/remove править общий. Свой главнее общего.
 Знак `+` ставится ПЕРЕД ударной гласной: `сомкн+уты`, `г+ермес`.
 Ключи сравниваются без учёта регистра; правило применяется по границам слова,
 поэтому «Git» не сломает «GitHub» (длинные ключи проверяются первыми).
@@ -19,7 +21,9 @@ import sys
 from pathlib import Path
 
 BASE = Path(__file__).parent
-PATH = Path(__import__("os").environ.get("SILERO_LEXICON", BASE / "lexicon.json"))
+BASE_PATH = BASE / "lexicon.json"                       # общий словарь (в репозитории)
+LOCAL_PATH = Path(__import__("os").environ.get("SILERO_LEXICON", BASE / "lexicon.local.json"))
+PATH = LOCAL_PATH                                        # add/remove пишут сюда; --base — в общий
 
 
 def load() -> dict:
@@ -57,7 +61,9 @@ def cmd_remove(word: str) -> int:
 
 
 def cmd_list(pattern: str | None) -> int:
-    words = load()["words"]
+    sys.path.insert(0, str(BASE))
+    from silero_tts import load_lexicon
+    words = load_lexicon()
     items = sorted(words.items(), key=lambda kv: kv[0].lower())
     if pattern:
         low = pattern.lower()
@@ -68,7 +74,7 @@ def cmd_list(pattern: str | None) -> int:
     width = max(len(k) for k, _ in items)
     for key, value in items:
         print(f"{key.ljust(width)}  ->  {value}")
-    print(f"\nвсего: {len(items)}   файл: {PATH}")
+    print(f"\nвсего: {len(items)}   (общий {BASE_PATH.name} + свой {LOCAL_PATH.name})")
     return 0
 
 
@@ -94,7 +100,11 @@ def cmd_say(text: str, out: str | None) -> int:
 
 
 def main() -> int:
+    global PATH
     args = sys.argv[1:]
+    if "--base" in args:
+        args.remove("--base")
+        PATH = BASE_PATH
     if not args:
         print(__doc__)
         return 1

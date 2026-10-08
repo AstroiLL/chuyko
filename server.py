@@ -8,7 +8,7 @@
 
 Все /api/* требуют заголовок `Authorization: Bearer <VOICE_TOKEN>`.
 Настройки — в .env рядом с server.py (см. .env.example).
-Автор: Илья Брызгалов aka @AstroiLL (astroill.info). Лицензия MIT.
+Author: Ilya Byven aka @AstroiLL (astroill.info). License: MIT.
 """
 from __future__ import annotations
 
@@ -79,7 +79,9 @@ if not AGENT_KEY:
 
 # Голосовой системный промпт — файл voice_prompt.md (правится без перезапуска кода).
 # К нему автоматически дописывается, как агенту менять фон страницы.
-PROMPT_FILE = Path(env("VOICE_PROMPT_FILE", str(BASE / "voice_prompt.md")))
+# Свой промпт (вне git) — voice_prompt.local.md, если он есть.
+_LOCAL_PROMPT = BASE / "voice_prompt.local.md"
+PROMPT_FILE = Path(env("VOICE_PROMPT_FILE", str(_LOCAL_PROMPT if _LOCAL_PROMPT.exists() else BASE / "voice_prompt.md")))
 BG_HINT = f"""
 Фон голосовой страницы — картинки в {BASE / "static" / "bg" / "images"}; показывается та,
 на которую ссылается static/bg/current.jpg. Менять командой

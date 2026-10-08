@@ -41,7 +41,7 @@
 
 ## Автор и лицензия
 
-Илья Брызгалов aka [@AstroiLL](https://github.com/AstroiLL) — [astroill.info](https://astroill.info)
+Илья Брызгалов (Ilya Byven) aka [@AstroiLL](https://github.com/AstroiLL) — [astroill.info](https://astroill.info)
 
 Лицензия [MIT](LICENSE): можно использовать как угодно, в том числе в коммерческих целях,
 сохраняя упоминание автора.
@@ -51,6 +51,7 @@
 ## 🤖 Для агента: установка
 
 Тебя попросили установить Чуйко. Полная пошаговая инструкция с проверками лежит в **[INSTALL.md](INSTALL.md)**.
+Если репозиторий приватный, клонируй его по ключу только для чтения, который дал пользователь (INSTALL.md, шаг 2).
 Кратко:
 
 1. Нужны Linux, Python 3.10+, ffmpeg, около 1.5 ГБ на диске и агент с OpenAI-совместимым `/v1/chat/completions`

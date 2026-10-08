@@ -27,7 +27,8 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).parent
 MODEL_DIR = Path(os.environ.get("SILERO_MODEL_DIR", BASE_DIR / "models"))
-LEXICON_PATH = Path(os.environ.get("SILERO_LEXICON", BASE_DIR / "lexicon.json"))
+LEXICON_PATH = BASE_DIR / "lexicon.json"                 # общий словарь (в репозитории)
+LOCAL_LEXICON_PATH = Path(os.environ.get("SILERO_LEXICON", BASE_DIR / "lexicon.local.json"))  # свой, вне git
 DEFAULT_MODEL = os.environ.get("SILERO_MODEL", "v5_5_ru")
 DEFAULT_VOICE = os.environ.get("SILERO_VOICE", "eugene")
 DEFAULT_SPEED = float(os.environ.get("SILERO_SPEED", "1.0"))
@@ -38,15 +39,21 @@ VOICES = {"aidar", "baya", "kseniya", "xenia", "eugene"}
 # --- словарь произношения -------------------------------------------------
 
 def load_lexicon() -> dict:
-    if not LEXICON_PATH.exists():
-        return {}
+    """Общий словарь + свой (lexicon.local.json); свой перекрывает общий."""
     import json
-    try:
-        data = json.loads(LEXICON_PATH.read_text(encoding="utf-8"))
-    except (ValueError, OSError) as exc:
-        print(f"[silero] lexicon ignored ({exc})", file=sys.stderr)
-        return {}
-    return data.get("words", data) if isinstance(data, dict) else {}
+    merged = {}
+    for path in (LEXICON_PATH, LOCAL_LEXICON_PATH):
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (ValueError, OSError) as exc:
+            print(f"[silero] lexicon {path.name} ignored ({exc})", file=sys.stderr)
+            continue
+        if isinstance(data, dict):
+            merged.update(data.get("words", data))
+    merged.pop("_comment", None)
+    return merged
 
 
 def apply_lexicon(text: str, lexicon: dict) -> str:

@@ -39,8 +39,22 @@ curl -s http://127.0.0.1:8642/v1/models -H "Authorization: Bearer $API_SERVER_KE
 
 ## 2. Скачать и установить
 
+Если репозиторий публичный:
 ```sh
-cd ~ && git clone <URL этого репозитория> chuyko && cd chuyko
+cd ~ && git clone https://github.com/AstroiLL/chuyko.git chuyko && cd chuyko
+```
+
+Если репозиторий **приватный**, пользователь даст тебе файл ключа только для чтения (deploy key):
+```sh
+install -m 600 <полученный файл ключа> ~/.ssh/chuyko_deploy
+cd ~ && GIT_SSH_COMMAND='ssh -i ~/.ssh/chuyko_deploy -o IdentitiesOnly=yes' \
+  git clone git@github.com:AstroiLL/chuyko.git chuyko && cd chuyko
+git config core.sshCommand 'ssh -i ~/.ssh/chuyko_deploy -o IdentitiesOnly=yes'   # чтобы работал git pull
+```
+Ключ даёт только чтение этого репозитория. Не коммить его и никуда не копируй.
+
+Затем:
+```sh
 ./install.sh            # venv, torch CPU, зависимости, .env с новым VOICE_TOKEN, модель Silero (~140 МБ)
 ```
 Если системный Python старше 3.10: `PYTHON=python3.11 ./install.sh`.
@@ -103,6 +117,18 @@ curl -sN http://127.0.0.1:7460/api/chat -H "Authorization: Bearer $T" \
 - токен приватно. Можно дать ссылку `https://<домен>/?t=<VOICE_TOKEN>`: страница запомнит токен и уберёт его из адреса;
 - на телефоне открывать в **Chrome** (распознавание речи работает там), меню → «Добавить на главный экран».
 
+## Обновление
+
+```sh
+cd ~/chuyko && git pull && ./install.sh && systemctl --user restart chuyko
+```
+`install.sh` можно запускать повторно: `.env` и уже скачанную модель он не трогает.
+
+Свои настройки держи в файлах, которые не попадают в git. Тогда `git pull` их не затрёт:
+- `.env`: всё про этот сервер;
+- `voice_prompt.local.md`: свой промпт (если есть, используется вместо `voice_prompt.md`);
+- `tts/lexicon.local.json`: свои слова для словаря ударений (`tts/lexicon.py add` пишет туда).
+
 ## Необязательно
 
 **Фон страницы.** Картинки лежат в `static/bg/images/`, показывается та, на которую ссылается `static/bg/current.jpg`.
@@ -113,7 +139,7 @@ curl -sN http://127.0.0.1:7460/api/chat -H "Authorization: Bearer $T" \
 ```
 Сервер сам подсказывает агенту эти команды в голосовом промпте, поэтому пользователь может попросить голосом.
 
-**Словарь ударений.** Файл `tts/lexicon.json`, знак `+` ставится перед ударной гласной:
+**Словарь ударений.** Общий словарь лежит в `tts/lexicon.json`, свои слова в `tts/lexicon.local.json`. Знак `+` ставится перед ударной гласной:
 ```sh
 .venv/bin/python tts/lexicon.py add "Чуйко" "ч+уйко"
 .venv/bin/python tts/lexicon.py list
