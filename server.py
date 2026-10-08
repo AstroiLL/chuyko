@@ -3,7 +3,8 @@
 
 Браузер телефона сам распознаёт речь (Web Speech API), сервер:
   * POST /api/chat  — передаёт текст агенту (/v1/chat/completions), стримит ответ (SSE);
-  * POST /api/tts   — озвучивает фразу Silero (модель держится в памяти);
+  * POST /api/tts   — озвучивает фразу через внешний TTS с OpenAI-совместимым API
+                      (silero-tts-service, OpenAI и т.п.); не настроен — читает браузер;
   * GET  /          — страница.
 
 Все /api/* требуют заголовок `Authorization: Bearer <VOICE_TOKEN>`.
@@ -12,16 +13,13 @@ Author: Ilya Byven aka @AstroiLL (astroill.info). License: MIT.
 """
 from __future__ import annotations
 
-import asyncio
 import datetime as dt
 import hmac
-import io
 import json
 import os
 import re
-import subprocess
 import sys
-import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
@@ -44,16 +42,13 @@ def _read_env(path: Path) -> dict:
 
 
 # .env рядом с server.py; переменные окружения главнее. Значения попадают и в os.environ,
-# чтобы модули tts/ видели SILERO_* настройки.
+# чтобы модули ниже (voicelog) видели свои настройки.
 for _k, _v in _read_env(BASE / ".env").items():
     os.environ.setdefault(_k, _v)
 HERMES_ENV = _read_env(Path.home() / ".hermes" / ".env")   # запасной источник ключа для Hermes
 
-# Модули ниже читают SILERO_* / VOICE_JOURNAL_DIR при импорте — поэтому после загрузки .env.
-sys.path.insert(0, str(BASE / "tts"))
+# voicelog читает VOICE_JOURNAL_DIR при импорте — поэтому после загрузки .env.
 sys.path.insert(0, str(BASE))
-from silero_tts import apply_lexicon, atempo_chain, ensure_model, load_lexicon  # noqa: E402
-from translit import convert_text  # noqa: E402
 from voicelog import append_turn  # noqa: E402
 
 
@@ -67,10 +62,14 @@ AGENT_KEY = env("AGENT_KEY") or HERMES_ENV.get("API_SERVER_KEY", "")
 AGENT_MODEL = env("AGENT_MODEL", "hermes-agent")
 PORT = int(env("VOICE_PORT", "7460"))
 HOST = env("VOICE_HOST", "127.0.0.1")
-VOICE = env("SILERO_VOICE", "eugene")
-SPEED = float(env("SILERO_SPEED", "1.0"))
-MODEL_NAME = env("SILERO_MODEL", "v5_5_ru")
-SAMPLE_RATE = 48000
+# Синтез речи: любой сервис с OpenAI-совместимым POST {TTS_URL}/audio/speech.
+# Пусто — сервер не озвучивает, страница читает ответы голосом браузера.
+TTS_URL = env("TTS_URL").rstrip("/")
+TTS_KEY = env("TTS_KEY")
+TTS_MODEL = env("TTS_MODEL", "silero")
+TTS_VOICE = env("TTS_VOICE") or env("SILERO_VOICE", "eugene")
+TTS_SPEED = float(env("TTS_SPEED") or env("SILERO_SPEED", "1.0"))
+LEXICON_FILE = BASE / "lexicon.local.json"   # свои ударения Чуйко (только для silero-tts-service)
 
 if not VOICE_TOKEN:
     sys.exit("VOICE_TOKEN не задан (см. .env.example)")
@@ -97,23 +96,7 @@ def voice_prompt() -> str:
         base = "Тебе говорят голосом, ответ будет зачитан синтезатором: отвечай коротко, без markdown."
     return base + "\n" + BG_HINT
 
-# --- Silero в памяти ---------------------------------------------------------
-
-_model = None
-_model_lock = threading.Lock()
-
-
-def get_model():
-    global _model
-    if _model is None:
-        import torch
-        torch.set_num_threads(max(1, (os.cpu_count() or 4) // 2))
-        m = torch.package.PackageImporter(str(ensure_model(MODEL_NAME))).load_pickle(
-            "tts_models", "model")
-        m.to(torch.device("cpu"))
-        _model = m
-    return _model
-
+# --- TTS ---------------------------------------------------------------------
 
 _MD = [
     (re.compile(r"```.*?```", re.S), " "),
@@ -135,36 +118,75 @@ def clean_for_speech(text: str) -> str:
     return text.strip()
 
 
-def synth_ogg(text: str) -> bytes:
-    text = convert_text(apply_lexicon(clean_for_speech(text), load_lexicon()))
-    if not re.search(r"[А-Яа-яЁё0-9]", text):
+def _local_lexicon() -> dict:
+    try:
+        data = json.loads(LEXICON_FILE.read_text(encoding="utf-8"))
+        return {str(k): str(v) for k, v in data.get("words", data).items() if not k.startswith("_")}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+async def _detect_silero() -> bool:
+    """Это silero-tts-service? Тогда ему можно слать свои ударения (поле lexicon)."""
+    root = re.sub(r"/v1$", "", TTS_URL)
+    try:
+        async with httpx.AsyncClient(timeout=5) as c:
+            r = await c.get(f"{root}/health")
+        return r.status_code == 200 and r.json().get("service") == "silero-tts-service"
+    except (httpx.HTTPError, ValueError):
+        return False
+
+
+TTS_IS_SILERO = False
+_http: httpx.AsyncClient | None = None
+
+
+async def synth_ogg(text: str) -> bytes | None:
+    """Фраза → Ogg Opus. b"" — произносить нечего, None — сервис синтеза недоступен."""
+    text = clean_for_speech(text)
+    if not re.search(r"[0-9A-Za-zА-Яа-яЁё]", text):
         return b""
-    with _model_lock:
-        audio = get_model().apply_tts(text=text, speaker=VOICE, sample_rate=SAMPLE_RATE)
-    pcm = (audio.clamp(-1, 1).numpy() * 32767).astype("int16").tobytes()
-    cmd = ["ffmpeg", "-loglevel", "error", "-f", "s16le", "-ar", str(SAMPLE_RATE), "-ac", "1",
-           "-i", "pipe:0"]
-    if abs(SPEED - 1.0) > 0.01:
-        cmd += ["-filter:a", atempo_chain(SPEED)]
-    cmd += ["-c:a", "libopus", "-b:a", "64k", "-f", "ogg", "pipe:1"]
-    return subprocess.run(cmd, input=pcm, capture_output=True, check=True).stdout
+    body = {"model": TTS_MODEL, "input": text, "voice": TTS_VOICE, "response_format": "opus"}
+    if abs(TTS_SPEED - 1.0) > 0.01:
+        body["speed"] = TTS_SPEED
+    if TTS_IS_SILERO and (lex := _local_lexicon()):
+        body["lexicon"] = lex
+    headers = {"Authorization": f"Bearer {TTS_KEY}"} if TTS_KEY else {}
+    try:
+        r = await _http.post(f"{TTS_URL}/audio/speech", json=body, headers=headers)
+    except httpx.HTTPError as exc:
+        print(f"[voice] TTS недоступен: {exc!r}", file=sys.stderr, flush=True)
+        return None
+    if r.status_code != 200:
+        print(f"[voice] TTS ответил {r.status_code}: {r.text[:200]}", file=sys.stderr, flush=True)
+        return None
+    return r.content
 
 
 # --- HTTP ----------------------------------------------------------------------
 
-app = FastAPI(title="chuyko", docs_url=None, redoc_url=None)
+@asynccontextmanager
+async def lifespan(_app):
+    global _http, TTS_IS_SILERO
+    _http = httpx.AsyncClient(timeout=httpx.Timeout(60, connect=5))
+    if TTS_URL:
+        TTS_IS_SILERO = await _detect_silero()
+        kind = "silero-tts-service" if TTS_IS_SILERO else "OpenAI-совместимый"
+        print(f"[voice] TTS: {TTS_URL} ({kind}), голос {TTS_VOICE}", flush=True)
+    else:
+        print("[voice] TTS_URL не задан — озвучивает браузер", flush=True)
+    print(f"[voice] http://{HOST}:{PORT}", flush=True)
+    yield
+    await _http.aclose()
+
+
+app = FastAPI(title="chuyko", docs_url=None, redoc_url=None, lifespan=lifespan)
 
 
 def check_auth(request: Request) -> None:
     got = request.headers.get("authorization", "")
     if not hmac.compare_digest(got.encode(), f"Bearer {VOICE_TOKEN}".encode()):
         raise HTTPException(401, "bad token")
-
-
-@app.on_event("startup")
-async def warm() -> None:
-    await asyncio.to_thread(get_model)
-    print(f"[voice] silero {MODEL_NAME}/{VOICE} загружен; http://{HOST}:{PORT}", flush=True)
 
 
 @app.get("/")
@@ -210,7 +232,7 @@ async def bg_current():
 @app.get("/api/ping")
 async def ping(request: Request):
     check_auth(request)
-    return {"ok": True, "voice": VOICE}
+    return {"ok": True, "tts": "server" if TTS_URL else "browser"}
 
 
 @app.post("/api/tts")
@@ -218,7 +240,11 @@ async def tts(request: Request):
     check_auth(request)
     body = await request.json()
     text = str(body.get("text", ""))[:2000]
-    data = await asyncio.to_thread(synth_ogg, text)
+    if not TTS_URL:
+        return Response(status_code=204)
+    data = await synth_ogg(text)
+    if data is None:                     # страница прочитает фразу голосом браузера
+        return Response(status_code=503)
     if not data:
         return Response(status_code=204)
     return Response(data, media_type="audio/ogg")

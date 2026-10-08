@@ -2,8 +2,7 @@
 .venv
 __pycache__/
 *.pyc
-tts/models
-tts/lexicon.local.json
+lexicon.local.json
 voice_prompt.local.md
 static/bg/images/*
 !static/bg/images/.gitkeep

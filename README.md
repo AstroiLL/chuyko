@@ -12,8 +12,10 @@
 - 🧠 **Отвечает твой агент, а не чужой чат-бот.** У него остаются память, инструменты, файлы и все
   навыки. Чуйко лишь передаёт твои слова агенту и его ответ обратно. Проверено с [Hermes Agent](https://github.com/NousResearch/hermes-agent),
   подойдёт любой агент с OpenAI-совместимым API.
-- 🔊 **Отвечает голосом.** Речь синтезируется на твоём сервере моделью Silero,
-  бесплатно и без облака. Есть словарь ударений и чтение английских терминов по-русски.
+- 🔊 **Отвечает голосом.** Лучше всего через [silero-tts-service](https://github.com/AstroiLL/silero-tts-service):
+  бесплатно, без облака, со словарём ударений и чтением английских терминов по-русски. Один такой сервис
+  обслуживает всех пользователей сервера и даже всю домашнюю сеть. Подойдёт и платный TTS
+  с API как у OpenAI. А можно вообще без сервера: тогда читает голос самого телефона.
 - 💬 **Режим «Разговор».** Можно говорить без нажатий, как по телефону.
 - 🖼️ **Фон страницы меняется.** Попроси агента «поставь фоном горное озеро», и он сгенерирует картинку.
 - 📓 **Дневник.** По желанию разговоры сохраняются в markdown, например в Obsidian.
@@ -24,7 +26,8 @@
 ```
 Телефон (браузер)                 Твой сервер                        Агент
  речь → текст (Chrome)  ──────►  Chuyko  ──── текст ──────────►  Hermes / другой
- озвучка ответа         ◄──────  Silero TTS ◄── ответ (стрим) ──
+ озвучка ответа         ◄──────    │   ◄────── ответ (стрим) ──
+                                   └──► silero-tts-service (этот или другой сервер)
 ```
 
 Распознавание речи в Chrome идёт через сервисы Google. Ответ агента и синтез голоса
@@ -34,8 +37,9 @@
 
 В репозитории их нет, они скачиваются при установке:
 
-- [Silero Models](https://github.com/snakers4/silero-models) — модели синтеза русской речи, © Silero Team (условия использования — в их репозитории).
-- [PyTorch](https://pytorch.org), [FastAPI](https://fastapi.tiangolo.com), [Uvicorn](https://www.uvicorn.org), [HTTPX](https://www.python-httpx.org).
+- [silero-tts-service](https://github.com/AstroiLL/silero-tts-service) — общий сервис синтеза речи на моделях
+  [Silero](https://github.com/snakers4/silero-models) (© Silero Team), ставится отдельно.
+- [FastAPI](https://fastapi.tiangolo.com), [Uvicorn](https://www.uvicorn.org), [HTTPX](https://www.python-httpx.org).
 - Иконка из [Noto Emoji](https://github.com/googlefonts/noto-emoji) (Google).
 - [Hermes Agent](https://github.com/NousResearch/hermes-agent) — агент, с которым Чуйко сделан и проверен.
 
@@ -54,9 +58,12 @@
 Если репозиторий приватный, клонируй его по ключу только для чтения, который дал пользователь (INSTALL.md, шаг 2).
 Кратко:
 
-1. Нужны Linux, Python 3.10+, ffmpeg, около 1.5 ГБ на диске и агент с OpenAI-совместимым `/v1/chat/completions`
+1. Нужны Linux, Python 3.10+, около 150 МБ на диске и агент с OpenAI-совместимым `/v1/chat/completions`
    (для Hermes нужно включить API Server).
-2. `git clone` → `./install.sh`: создаёт venv, ставит зависимости и модель Silero, создаёт `.env` с токеном.
-3. Заполнить в `.env` `AGENT_URL` и `AGENT_KEY`, установить systemd-сервис из `deploy/chuyko.service`.
-4. Дать HTTPS через reverse proxy (`deploy/Caddyfile.example`), иначе браузер не даст доступ к микрофону.
-5. Проверить по чек-листу из INSTALL.md и отдать пользователю ссылку и токен.
+2. `git clone` → `./install.sh`: создаёт venv, ставит зависимости, создаёт `.env` с токеном.
+3. Голос (INSTALL.md, шаг 4): найди готовый silero-tts-service на сервере или в сети, проверь, какой TTS
+   у агента, и **спроси пользователя**, что использовать: готовый сервис, поставить новый, платный TTS
+   агента или голос браузера.
+4. Заполнить в `.env` `AGENT_URL` и `AGENT_KEY`, установить systemd-сервис из `deploy/chuyko.service`.
+5. Дать HTTPS через reverse proxy (`deploy/Caddyfile.example`), иначе браузер не даст доступ к микрофону.
+6. Проверить по чек-листу из INSTALL.md и отдать пользователю ссылку и токен.

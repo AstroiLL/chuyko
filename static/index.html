@@ -132,9 +132,22 @@
 
   const authHeaders = () => ({ "Authorization": "Bearer " + token, "Content-Type": "application/json" });
 
+  // serverTts=false — на сервере синтез не настроен (TTS_URL пуст): озвучивает только браузер.
+  let serverTts = true;
   async function checkToken() {
     if (!token) return false;
-    try { return (await fetch("/api/ping", { headers: authHeaders() })).ok; } catch { return false; }
+    try {
+      const r = await fetch("/api/ping", { headers: authHeaders() });
+      if (!r.ok) return false;
+      const j = await r.json().catch(() => ({}));
+      serverTts = j.tts !== "browser";
+      if (!serverTts) {
+        $("browserVoice").checked = true; $("browserVoice").disabled = true;
+        $("browserVoice").parentElement.title = "Синтез на сервере не настроен";
+        $("voicePick").style.display = ""; fillVoiceList();
+      }
+      return true;
+    } catch { return false; }
   }
   async function ensureAuth() {
     if (await checkToken()) { $("auth").style.display = "none"; return; }
@@ -178,15 +191,18 @@
   // ---------- озвучка: очередь фраз ----------
   const audio = new Audio();
   let ttsQueue = [];       // [{promise}] — синтез запускается сразу, проигрывание по порядку
+  const FALLBACK = "browser";   // маркер «сервер не смог — читает браузер»
   let playing = false, streamDone = true, stopped = false;
 
   function enqueueSpeech(text) {
     text = text.trim();
     if (!text || !$("speak").checked) return;
-    if ($("browserVoice").checked) { ttsQueue.push({ text, browser: true }); }
+    if ($("browserVoice").checked || !serverTts) { ttsQueue.push({ text, browser: true }); }
     else {
+      // Сервис синтеза недоступен (5xx, сеть) — эту фразу прочитает браузер.
       const p = fetch("/api/tts", { method: "POST", headers: authHeaders(), body: JSON.stringify({ text }) })
-        .then(r => r.status === 200 ? r.blob() : null).catch(() => null);
+        .then(r => r.status === 200 ? r.blob() : (r.status >= 500 ? FALLBACK : null))
+        .catch(() => FALLBACK);
       ttsQueue.push({ text, promise: p });
     }
     if (!playing) playLoop();
@@ -224,6 +240,7 @@
       setState("speaking");
       if (item.browser) { await speakBrowser(item.text); continue; }
       const blob = await item.promise;
+      if (blob === FALLBACK && !stopped) { await speakBrowser(item.text); continue; }
       if (!blob || stopped) continue;
       const src = URL.createObjectURL(blob);
       audio.src = src;
