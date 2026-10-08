@@ -11,7 +11,7 @@
 | Что | Проверка |
 |---|---|
 | Linux с systemd, ~1.5 ГБ диска, 2+ ГБ RAM | `df -h ~`, `free -h` |
-| Python 3.10+ с модулем venv | `python3 --version` |
+| Python 3.10+ и модуль venv **или** [uv](https://docs.astral.sh/uv/) | `python3 -m venv --help` / `uv --version` |
 | ffmpeg | `ffmpeg -version` |
 | git | `git --version` |
 | Агент с OpenAI-совместимым `POST /v1/chat/completions` (stream) | см. шаг 1 |
