@@ -82,13 +82,20 @@ git config core.sshCommand 'ssh -i ~/.ssh/chuyko_deploy -o IdentitiesOnly=yes'  
 ### 4.1. Что уже есть
 
 ```sh
+cat ~/.config/silero-tts/client.env 2>/dev/null | sed 's/KEY=.*/KEY=***/'   # указатель на сервис в сети
 curl -s http://127.0.0.1:7470/health        # silero-tts-service на этом сервере
 grep -A4 '^tts:' ~/.hermes/config.yaml       # чем озвучивает агент (Hermes)
 ```
+- **Есть `~/.config/silero-tts/client.env`**: владелец сервиса уже выдал этой машине адрес
+  (`SILERO_TTS_URL`) и токен (`SILERO_TTS_KEY`). Сервис может стоять на другой машине в сети.
+  Проверь его: `. ~/.config/silero-tts/client.env && curl -s "$SILERO_TTS_URL/health"`.
+  Это вариант A, и токен уже есть. Чуйко сам подключится по этому файлу, если `TTS_URL` в `.env` пуст.
 - Ответ `{"ok":true,"service":"silero-tts-service",...}` значит, что общий сервис Silero уже стоит.
   Его мог поставить и другой пользователь этого сервера.
 - Спроси пользователя, нет ли [silero-tts-service](https://github.com/AstroiLL/silero-tts-service)
   на другой машине в сети, например на мощном сервере: `curl -s http://<адрес>:7470/health`.
+  Если есть, попроси владельца сервиса выдать токен этой машине (шаг 5 INSTALL.md silero-tts-service):
+  он положит сюда `~/.config/silero-tts/client.env`, и токен не придётся пересылать в чате.
 - `tts.provider` у Hermes:
   - `openai`: если `tts.openai.base_url` указывает на `:7470`, это silero-tts-service, иначе платный OpenAI;
   - `elevenlabs`, `minimax`, `gemini`, `xai`, `mistral`: платные облачные;
@@ -102,10 +109,10 @@ grep -A4 '^tts:' ~/.hermes/config.yaml       # чем озвучивает аг�
 
 | Вариант | Когда | Цена | Что сделать |
 |---|---|---|---|
-| **A. Существующий silero-tts-service** | нашёлся в 4.1 | бесплатно для некоммерческого использования* | получить токен: на машине с сервисом `tokens.py add chuyko-<пользователь>` (делает его владелец) |
+| **A. Существующий silero-tts-service** | нашёлся в 4.1 (здесь, в сети или через `client.env`) | бесплатно для некоммерческого использования* | если `client.env` есть, ничего не делать; иначе владелец сервиса выдаёт токен и кладёт `client.env` |
 | **B. Поставить silero-tts-service** | сервиса нет; ~1.2 ГБ диска и ~0.8 ГБ RAM один раз на сервер или на сеть | бесплатно для некоммерческого использования* | по [его INSTALL.md](https://github.com/AstroiLL/silero-tts-service/blob/main/INSTALL.md). Если на сервере несколько пользователей, ставь в режиме «системный сервис» |
 | **C. Платный TTS агента**, если он OpenAI-совместимый | пользователь хочет тот же голос, что у агента | по тарифу провайдера (OpenAI `tts-1`: около $15 за 1 млн символов) | взять ключ и модель из настроек агента |
-| **D. Голос браузера** | без установки; качество зависит от телефона | бесплатно | оставить `TTS_URL` пустым |
+| **D. Голос браузера** | без установки; качество зависит от телефона | бесплатно | `TTS_URL=off` |
 
 \* Модели Silero распространяются под CC BY-NC 4.0. Если Чуйко ставят для бизнеса, предупреди
 пользователя: для коммерческого использования нужна лицензия Silero (hello@silero.ai), либо выбирай C или D.
@@ -120,7 +127,9 @@ ElevenLabs, Gemini, MiniMax и другие провайдеры без OpenAI-�
 ### 4.3. Записать в `.env`
 
 ```sh
-# A, B: silero-tts-service (токен — свой для Чуйко, не общий с агентом)
+# A, B: silero-tts-service.
+#   Есть ~/.config/silero-tts/client.env → TTS_URL и TTS_KEY оставь пустыми, Чуйко возьмёт их оттуда.
+#   Иначе укажи явно:
 TTS_URL=http://127.0.0.1:7470/v1        # или http://<хост в сети>:7470/v1
 TTS_KEY=<токен stts_…>
 TTS_VOICE=eugene                         # eugene, aidar, xenia, kseniya, baya
@@ -132,9 +141,12 @@ TTS_KEY=<ключ>
 TTS_MODEL=gpt-4o-mini-tts
 TTS_VOICE=alloy
 
-# D: голос браузера
-TTS_URL=
+# D: голос браузера (даже если client.env есть)
+TTS_URL=off
 ```
+
+Проверка после запуска (шаг 5): в журнале `journalctl --user -u chuyko -n 5` строка
+`TTS: <адрес> (silero-tts-service, из <откуда>)`.
 
 Если сервис синтеза временно недоступен (например, мощный сервер выключен), страница читает фразы
 голосом браузера, и разговор не прерывается.

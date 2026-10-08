@@ -63,9 +63,24 @@ AGENT_MODEL = env("AGENT_MODEL", "hermes-agent")
 PORT = int(env("VOICE_PORT", "7460"))
 HOST = env("VOICE_HOST", "127.0.0.1")
 # Синтез речи: любой сервис с OpenAI-совместимым POST {TTS_URL}/audio/speech.
-# Пусто — сервер не озвучивает, страница читает ответы голосом браузера.
-TTS_URL = env("TTS_URL").rstrip("/")
+#   TTS_URL задан            — он (и TTS_KEY);
+#   TTS_URL пуст             — ищем клиентский файл silero-tts-service
+#                              (~/.config/silero-tts/client.env: SILERO_TTS_URL, SILERO_TTS_KEY);
+#   TTS_URL=off (или browser) — сервер не озвучивает, страница читает голосом браузера.
+SILERO_CLIENT_CONF = Path(env("SILERO_TTS_CONF") or
+                          Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+                          / "silero-tts" / "client.env")
+TTS_URL = env("TTS_URL").strip().rstrip("/")
 TTS_KEY = env("TTS_KEY")
+TTS_SOURCE = ".env"
+if TTS_URL.lower() in {"off", "browser", "none"}:
+    TTS_URL, TTS_SOURCE = "", "off"
+elif not TTS_URL and SILERO_CLIENT_CONF.exists():
+    _client = _read_env(SILERO_CLIENT_CONF)
+    if _client.get("SILERO_TTS_URL"):
+        TTS_URL = re.sub(r"(/v1)?/*$", "", _client["SILERO_TTS_URL"]) + "/v1"
+        TTS_KEY = TTS_KEY or _client.get("SILERO_TTS_KEY", "")
+        TTS_SOURCE = str(SILERO_CLIENT_CONF)
 TTS_MODEL = env("TTS_MODEL", "silero")
 TTS_VOICE = env("TTS_VOICE") or env("SILERO_VOICE", "eugene")
 TTS_SPEED = float(env("TTS_SPEED") or env("SILERO_SPEED", "1.0"))
@@ -172,9 +187,10 @@ async def lifespan(_app):
     if TTS_URL:
         TTS_IS_SILERO = await _detect_silero()
         kind = "silero-tts-service" if TTS_IS_SILERO else "OpenAI-совместимый"
-        print(f"[voice] TTS: {TTS_URL} ({kind}), голос {TTS_VOICE}", flush=True)
+        print(f"[voice] TTS: {TTS_URL} ({kind}, из {TTS_SOURCE}), голос {TTS_VOICE}", flush=True)
     else:
-        print("[voice] TTS_URL не задан — озвучивает браузер", flush=True)
+        why = "TTS_URL=off" if TTS_SOURCE == "off" else "TTS_URL не задан и нет client.env"
+        print(f"[voice] {why} — озвучивает браузер", flush=True)
     print(f"[voice] http://{HOST}:{PORT}", flush=True)
     yield
     await _http.aclose()
