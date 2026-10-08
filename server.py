@@ -101,7 +101,17 @@ BG_HINT = f"""
 на которую ссылается static/bg/current.jpg. Менять командой
 `{sys.executable} {BASE / "set_bg.py"}` с подкомандами: `gen "<подробное описание на английском>"`
 (сгенерировать), `add <путь>` (своя картинка), `list`, `use <имя>`. Страница подхватит фон сама.
+
+В шапке страницы после «Чуйко» показан адрес агента. Если пользователь просит подписать там агента
+по имени, впиши имя в строку `AGENT_NAME=` файла {BASE / ".env"} (пусто — снова адрес).
+Перезапуск не нужен: шапка обновится, когда пользователь перезагрузит страницу.
 """
+
+
+def agent_label() -> str:
+    """Подпись агента в шапке: AGENT_NAME из .env (читается при каждом запросе, меняется без
+    перезапуска), иначе адрес агента — чтобы при нескольких агентах было видно, с кем разговор."""
+    return _read_env(BASE / ".env").get("AGENT_NAME", "").strip()[:60] or AGENT_URL
 
 
 def voice_prompt() -> str:
@@ -248,7 +258,7 @@ async def bg_current():
 @app.get("/api/ping")
 async def ping(request: Request):
     check_auth(request)
-    return {"ok": True, "tts": "server" if TTS_URL else "browser"}
+    return {"ok": True, "tts": "server" if TTS_URL else "browser", "agent": agent_label()}
 
 
 @app.post("/api/tts")

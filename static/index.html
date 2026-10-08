@@ -18,7 +18,9 @@
   body { display:flex; flex-direction:column; height:100dvh; height:var(--vph,100dvh);
          padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
   header { display:flex; align-items:center; gap:8px; padding:6px 12px; border-bottom:1px solid #222733; }
-  header h1 { font-size:15px; margin:0; flex:1; }
+  header h1 { font-size:15px; margin:0; flex:1; min-width:0;
+              white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #agentLabel { font-weight:400; font-size:13px; color:#c9ced8; }
   header button { background:none; border:1px solid #2c3240; color:var(--muted); border-radius:8px;
                   padding:4px 8px; font-size:12px; }
   #log { flex:1; overflow-y:auto; padding:8px 10px; display:flex; flex-direction:column; gap:6px; }
@@ -84,7 +86,7 @@
 <body>
 <div id="bg"></div>
 <header>
-  <h1>🎙️ Чуйко</h1>
+  <h1>🎙️ Чу́йко<span id="agentLabel"></span></h1>
   <button id="newBtn" title="Новая сессия">Новый</button>
 </header>
 
@@ -141,6 +143,8 @@
       if (!r.ok) return false;
       const j = await r.json().catch(() => ({}));
       serverTts = j.tts !== "browser";
+      // С кем разговор: имя агента (AGENT_NAME в .env) или его адрес.
+      $("agentLabel").textContent = j.agent ? " · " + j.agent : "";
       if (!serverTts) {
         $("browserVoice").checked = true; $("browserVoice").disabled = true;
         $("browserVoice").parentElement.title = "Синтез на сервере не настроен";
